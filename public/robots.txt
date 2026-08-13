@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://potohar-real-estates.vercel.app/sitemap.xml

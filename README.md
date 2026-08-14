@@ -76,7 +76,7 @@ Plain-language sign-in flow. Opens when listing, viewing My Listings, or opening
 - **UI:** React 18, Tailwind CSS 3
 - **Icons:** Lucide React
 - **Fonts:** Plus Jakarta Sans, JetBrains Mono (via Google Fonts)
-- **State:** React hooks (`useState`, `useMemo`) — client-side; no backend database yet
+- **State:** React hooks + Supabase (Postgres) backend — auth, listings, and favorites are stored in the database, not local state.
 
 ## Project Structure
 
@@ -126,9 +126,9 @@ npm start
 
 ## Notes
 
-- Listings and auth are **frontend simulations** — data resets on page refresh unless you add a backend or persistence layer.
-- Sample listings ship with realistic Gulberg Islamabad data for demo and UI testing.
-- Verification codes appear in the on-screen notification during the code step (demo mode).
+- Listings and auth are backed by **Supabase** (Postgres + Auth). Set the env vars in `.env.local` (see `.env.local.example`) and run the SQL in `supabase/schema.sql` (or `supabase/migrations/`) to enable the live backend.
+- The database starts empty — listings are created by signed-in users through the app.
+- Listing detail pages are statically generated (`/listings/[id]`) with per-listing metadata, Open Graph tags, JSON-LD structured data, and a dynamic `sitemap.xml`.
 
 ---
 

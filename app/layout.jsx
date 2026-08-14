@@ -1,4 +1,5 @@
 import './globals.css';
+import { getSiteUrl } from '../lib/site';
 
 export const metadata = {
   title: 'Potohar Real Estates | Gulberg Islamabad Properties',
@@ -26,7 +27,7 @@ export const metadata = {
     title: 'Potohar Real Estates | Gulberg Islamabad Properties',
     description: 'Buy and sell plots, built houses, and luxury farmhouses in Gulberg Greens & Gulberg Residencia, Islamabad.',
   },
-  metadataBase: new URL('https://potohar-real-estates.vercel.app'),
+  metadataBase: new URL(getSiteUrl()),
 };
 
 export default function RootLayout({ children }) {

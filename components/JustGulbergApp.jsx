@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import AuthPage from './AuthPage';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase/client';
 import {
@@ -66,118 +67,6 @@ const GREENS_SIZES = [
 
 const FEATURE_CATEGORIES = [
   'All Features', 'Corner', 'Main Road', 'Park Side', 'Corner + Park Side', 'Standard'
-];
-
-// Initial Realistic Sample Listings for Gulberg Islamabad
-const INITIAL_LISTINGS = [
-  {
-    id: 'g-101',
-    title: '5 Kanal Luxurious Built Farmhouse in Executive Block',
-    sector: 'Gulberg Greens',
-    block: 'Executive Block',
-    size: '5 Kanal',
-    type: 'Built',
-    feature: 'Corner + Park Side',
-    pricePKR: 185000000, // 18.5 Crore
-    displayPrice: '18.5 Crore',
-    location: 'Executive Block, Gulberg Greens, Islamabad',
-    description: 'Ultra-modern 5 Kanal designer farmhouse with swimming pool, lush green lawns, servant quarters, and imported fixtures.',
-    sellerName: 'Chaudhry & Sons Real Estate',
-    sellerPhone: '+92 300 8559922',
-    image: 'https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?auto=format&fit=crop&w=800&q=80',
-    isMyListing: false,
-    date: '2 hours ago'
-  },
-  {
-    id: 'r-202',
-    title: '1 Kanal Prime Plot on Main Boulevard',
-    sector: 'Gulberg Residencia',
-    block: 'Block A',
-    size: '1 Kanal',
-    type: 'Plot',
-    feature: 'Main Road',
-    pricePKR: 32000000, // 3.2 Crore
-    displayPrice: '3.20 Crore',
-    location: 'Block A, Main Boulevard, Gulberg Residencia',
-    description: 'Ideal location plot ready for immediate construction. Direct connection to main commercial district.',
-    sellerName: 'Malik Real Estate Consultants',
-    sellerPhone: '+92 321 5544332',
-    image: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=800&q=80',
-    isMyListing: false,
-    date: '5 hours ago'
-  },
-  {
-    id: 'r-203',
-    title: '7 Marla Newly Built Double Story House',
-    sector: 'Gulberg Residencia',
-    block: 'Block E',
-    size: '7 Marla',
-    type: 'Built',
-    feature: 'Park Side',
-    pricePKR: 24500000, // 2.45 Crore
-    displayPrice: '2.45 Crore',
-    location: 'Block E, Facing Park, Gulberg Residencia',
-    description: '5 Bed, 6 Bath luxury house facing central park. Solid ash wood doors, Spanish tiles, and rooftop BBQ terrace.',
-    sellerName: 'Gulberg Living Builders',
-    sellerPhone: '+92 333 9876543',
-    image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&q=80',
-    isMyListing: false,
-    date: '1 day ago'
-  },
-  {
-    id: 'g-102',
-    title: '4 Kanal Corner Farmhouse Plot',
-    sector: 'Gulberg Greens',
-    block: 'Block B',
-    size: '4 Kanal',
-    type: 'Plot',
-    feature: 'Corner',
-    pricePKR: 85000000, // 8.5 Crore
-    displayPrice: '8.50 Crore',
-    location: 'Block B, Gulberg Greens Islamabad',
-    description: 'Corner plot with dual road access. Ideal for constructing a high-end luxury farmhouse estate.',
-    sellerName: 'Khan Property Network',
-    sellerPhone: '+92 301 4455667',
-    image: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80',
-    isMyListing: false,
-    date: '2 days ago'
-  },
-  {
-    id: 'r-204',
-    title: '10 Marla Residential Plot in Block F',
-    sector: 'Gulberg Residencia',
-    block: 'Block F',
-    size: '10 Marla',
-    type: 'Plot',
-    feature: 'Standard',
-    pricePKR: 19500000, // 1.95 Crore
-    displayPrice: '1.95 Crore',
-    location: 'Block F, Gulberg Residencia Islamabad',
-    description: 'Level ground plot surrounded by constructed houses. All utility connections available.',
-    sellerName: 'Islamabad Prime Estate',
-    sellerPhone: '+92 312 8877665',
-    image: 'https://images.unsplash.com/photo-1524813686514-a57563d77965?auto=format&fit=crop&w=800&q=80',
-    isMyListing: false,
-    date: '3 days ago'
-  },
-  {
-    id: 'g-103',
-    title: '10 Kanal Magnificent Palace Farmhouse',
-    sector: 'Gulberg Greens',
-    block: 'Block C',
-    size: '10 Kanal',
-    type: 'Built',
-    feature: 'Corner + Park Side',
-    pricePKR: 390000000, // 39 Crore
-    displayPrice: '39.0 Crore',
-    location: 'Block C, Gulberg Greens Islamabad',
-    description: 'Royal style 10 Kanal villa with private tennis court, infinity pool, 8 master suites, and security compound.',
-    sellerName: 'Royal Properties Gulberg',
-    sellerPhone: '+92 300 1122334',
-    image: 'https://images.unsplash.com/photo-1613977257363-707ba9348227?auto=format&fit=crop&w=800&q=80',
-    isMyListing: false,
-    date: '4 days ago'
-  }
 ];
 
 export default function JustGulbergApp() {
@@ -248,8 +137,6 @@ export default function JustGulbergApp() {
     } else {
       setActiveTab('account');
     }
-
-    if (supabaseLive) loadListings(userData?.id);
   };
 
   // Handle user Sign Out
@@ -260,78 +147,10 @@ export default function JustGulbergApp() {
     setCurrentUser(null);
     setAuthUserId(null);
     setActiveTab('home');
-    if (supabaseLive) loadListings(null);
   };
 
-  const loadListings = useCallback(async (userId) => {
-    if (!supabaseLive) {
-      setListings(INITIAL_LISTINGS);
-      setListingsLoading(false);
-      return;
-    }
-
-    setListingsLoading(true);
-    try {
-      const data = await fetchListingsFromDb(userId);
-      if (data) setListings(data);
-      if (userId) {
-        const favs = await fetchFavoritesFromDb(userId);
-        setFavorites(favs);
-      }
-    } catch (err) {
-      console.error('Failed to load listings:', err);
-    } finally {
-      setListingsLoading(false);
-    }
-  }, [supabaseLive]);
-
-  useEffect(() => {
-    if (!supabaseLive) {
-      setListings(INITIAL_LISTINGS);
-      setListingsLoading(false);
-      return;
-    }
-
-    const supabase = getSupabase();
-    if (!supabase) return;
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const uid = session.user.id;
-        setAuthUserId(uid);
-        setIsLoggedIn(true);
-        getProfile(uid).then((profile) => {
-          setCurrentUser({
-            id: uid,
-            email: session.user.email,
-            phone: profile?.phone || session.user.user_metadata?.phone || '',
-            name: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
-          });
-        });
-        loadListings(uid);
-      } else {
-        loadListings(null);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setAuthUserId(session.user.id);
-        setIsLoggedIn(true);
-        loadListings(session.user.id);
-      } else if (_event === 'SIGNED_OUT') {
-        setAuthUserId(null);
-        setIsLoggedIn(false);
-        setCurrentUser(null);
-        loadListings(null);
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabaseLive, loadListings]);
-
   // Listings State
-  const [listings, setListings] = useState(INITIAL_LISTINGS);
+  const [listings, setListings] = useState([]);
   const [favorites, setFavorites] = useState([]);
 
   // Search & Filter States
@@ -343,6 +162,104 @@ export default function JustGulbergApp() {
   const [featureFilter, setFeatureFilter] = useState('All Features');
   const [maxPrice, setMaxPrice] = useState(400000000); // Max PKR
   const [sortOrder, setSortOrder] = useState('newest'); // 'newest' | 'price_high' | 'price_low'
+
+  // Always fetch from the database; all filtering/sorting runs in Postgres.
+  // Kept in a ref so the auth listener always calls the latest version.
+  const refreshRef = useRef(null);
+  refreshRef.current = async () => {
+    if (!supabaseLive) {
+      setListings([]);
+      setListingsLoading(false);
+      return;
+    }
+    setListingsLoading(true);
+    try {
+      const myListingsOnly = activeTab === 'my_listings';
+      const data = await fetchListingsFromDb({
+        currentUserId: authUserId,
+        sector: sectorFilter,
+        block: blockFilter,
+        size: sizeFilter,
+        type: typeFilter,
+        feature: featureFilter,
+        maxPrice,
+        searchQuery,
+        sortOrder,
+        myListingsOnly,
+      });
+      if (data) setListings(data);
+      if (authUserId) {
+        const favs = await fetchFavoritesFromDb(authUserId);
+        setFavorites(favs);
+      }
+    } catch (err) {
+      console.error('Failed to load listings:', err);
+    } finally {
+      setListingsLoading(false);
+    }
+  };
+
+  // Debounced refetch whenever filters / sort / tab / signed-in user change
+  useEffect(() => {
+    if (!supabaseLive) {
+      setListings([]);
+      setListingsLoading(false);
+      return undefined;
+    }
+    setListingsLoading(true);
+    const t = setTimeout(() => {
+      if (refreshRef.current) refreshRef.current();
+    }, 300);
+    return () => clearTimeout(t);
+  }, [supabaseLive, authUserId, activeTab, sectorFilter, blockFilter, sizeFilter, typeFilter, featureFilter, maxPrice, searchQuery, sortOrder]);
+
+  // Session restore + live auth state listener
+  useEffect(() => {
+    if (!supabaseLive) return undefined;
+
+    const supabase = getSupabase();
+    if (!supabase) return undefined;
+
+    let cancelled = false;
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      if (session?.user) {
+        const uid = session.user.id;
+        setAuthUserId(uid);
+        setIsLoggedIn(true);
+        getProfile(uid).then((profile) => {
+          if (cancelled) return;
+          setCurrentUser({
+            id: uid,
+            email: session.user.email,
+            phone: profile?.phone || session.user.user_metadata?.phone || '',
+            name: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
+          });
+        });
+      }
+      if (refreshRef.current) refreshRef.current();
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      if (session?.user) {
+        setAuthUserId(session.user.id);
+        setIsLoggedIn(true);
+      } else if (event === 'SIGNED_OUT') {
+        setAuthUserId(null);
+        setIsLoggedIn(false);
+        setCurrentUser(null);
+        setFavorites([]);
+      }
+      if (refreshRef.current) refreshRef.current();
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [supabaseLive]);
 
   // Contact Seller Modal State
   const [selectedSeller, setSelectedSeller] = useState(null);
@@ -380,56 +297,20 @@ export default function JustGulbergApp() {
     return [...RESIDENCIA_SIZES, ...GREENS_SIZES];
   }, [sectorFilter]);
 
-  // Filtered Listings Calculation
-  const filteredListings = useMemo(() => {
-    return listings.filter((item) => {
-      // Tab check
-      if (activeTab === 'my_listings' && !item.isMyListing) return false;
-
-      // Sector check
-      if (sectorFilter !== 'All' && item.sector !== sectorFilter) return false;
-
-      // Block check
-      if (blockFilter !== 'All' && item.block !== blockFilter) return false;
-
-      // Size check
-      if (sizeFilter !== 'All' && item.size !== sizeFilter) return false;
-
-      // Type check
-      if (typeFilter !== 'All' && item.type !== typeFilter) return false;
-
-      // Feature check
-      if (featureFilter !== 'All Features' && item.feature !== featureFilter) return false;
-
-      // Price check
-      if (item.pricePKR > maxPrice) return false;
-
-      // Search Query check
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const titleMatch = item.title.toLowerCase().includes(q);
-        const blockMatch = item.block.toLowerCase().includes(q);
-        const sectorMatch = item.sector.toLowerCase().includes(q);
-        const descMatch = item.description.toLowerCase().includes(q);
-        if (!titleMatch && !blockMatch && !sectorMatch && !descMatch) return false;
-      }
-
-      return true;
-    }).sort((a, b) => {
-      if (sortOrder === 'price_high') return b.pricePKR - a.pricePKR;
-      if (sortOrder === 'price_low') return a.pricePKR - b.pricePKR;
-      return 0; // 'newest' — natural order (newest pushed to top on creation)
-    });
-  }, [listings, activeTab, sectorFilter, blockFilter, sizeFilter, typeFilter, featureFilter, maxPrice, searchQuery, sortOrder]);
-
   // Toggle Favorite
   const toggleFavorite = async (id) => {
+    if (!isLoggedIn || !authUserId) {
+      setAuthModalReason('account');
+      setShowAuthModal(true);
+      return;
+    }
+
     const isCurrentlyFav = favorites.includes(id);
     setFavorites((prev) =>
       isCurrentlyFav ? prev.filter((item) => item !== id) : [...prev, id]
     );
 
-    if (supabaseLive && authUserId && authUserId !== 'demo-user') {
+    if (supabaseLive && authUserId) {
       try {
         await toggleFavoriteInDb(authUserId, id, isCurrentlyFav);
       } catch (err) {
@@ -501,24 +382,15 @@ export default function JustGulbergApp() {
     setIsUpdating(true);
 
     try {
-      if (supabaseLive && authUserId && authUserId !== 'demo-user') {
-        let imageUrl = listingPayload.image;
-        if (editImageFile) {
-          imageUrl = await uploadPropertyImage(editImageFile, authUserId);
-        }
-        listingPayload.image = imageUrl;
-
-        const updated = await updateListing(editingProperty.id, listingPayload, authUserId);
-        setListings((prev) => prev.map((item) => (item.id === editingProperty.id ? updated : item)));
-        setSelectedProperty((prev) => (prev?.id === editingProperty.id ? updated : prev));
-      } else {
-        const updatedItem = {
-          ...editingProperty,
-          ...listingPayload,
-        };
-        setListings((prev) => prev.map((item) => (item.id === editingProperty.id ? updatedItem : item)));
-        setSelectedProperty((prev) => (prev?.id === editingProperty.id ? updatedItem : prev));
+      let imageUrl = listingPayload.image;
+      if (editImageFile) {
+        imageUrl = await uploadPropertyImage(editImageFile, authUserId);
       }
+      listingPayload.image = imageUrl;
+
+      const updated = await updateListing(editingProperty.id, listingPayload, authUserId);
+      setListings((prev) => prev.map((item) => (item.id === editingProperty.id ? updated : item)));
+      setSelectedProperty((prev) => (prev?.id === editingProperty.id ? updated : prev));
 
       setEditSuccessMsg('Property listing updated successfully!');
       setTimeout(() => {
@@ -569,23 +441,18 @@ export default function JustGulbergApp() {
     setIsPublishing(true);
 
     try {
-      if (supabaseLive && authUserId && authUserId !== 'demo-user') {
-        let imageUrl = listingPayload.image;
-        if (listingImageFile) {
-          imageUrl = await uploadPropertyImage(listingImageFile, authUserId);
-        }
-        listingPayload.image = imageUrl;
-        const created = await insertListing(listingPayload, authUserId);
-        setListings((prev) => [created, ...prev]);
-      } else {
-        const createdItem = {
-          id: `custom-${Date.now()}`,
-          ...listingPayload,
-          isMyListing: true,
-          date: 'Just now',
-        };
-        setListings((prev) => [createdItem, ...prev]);
+      if (!supabaseLive) {
+        alert('Supabase is not connected yet. Add the Supabase keys to .env.local first.');
+        return;
       }
+
+      let imageUrl = listingPayload.image;
+      if (listingImageFile) {
+        imageUrl = await uploadPropertyImage(listingImageFile, authUserId);
+      }
+      listingPayload.image = imageUrl;
+      const created = await insertListing(listingPayload, authUserId);
+      setListings((prev) => [created, ...prev]);
 
       setListingSuccessMsg('Your property has been published on Potohar Real Estates!');
       setListingImageFile(null);
@@ -623,9 +490,7 @@ export default function JustGulbergApp() {
     if (!confirm('Are you sure you want to delete this property listing?')) return;
 
     try {
-      if (supabaseLive && authUserId && authUserId !== 'demo-user') {
-        await removeListing(id);
-      }
+      await removeListing(id);
       setListings((prev) => prev.filter((item) => item.id !== id));
       setSelectedProperty((prev) => (prev?.id === id ? null : prev));
     } catch (err) {
@@ -932,11 +797,16 @@ export default function JustGulbergApp() {
           )}
 
           {/* PROPERTY GRID */}
+          {!supabaseLive && (
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-sm text-center">
+              Supabase is not connected yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local to load live listings.
+            </div>
+          )}
           {listingsLoading ? (
             <div className="text-center py-16 text-slate-400 text-sm">Loading properties...</div>
-          ) : filteredListings.length > 0 ? (
+          ) : listings.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredListings.map((item) => (
+              {listings.map((item) => (
                 <div
                   key={item.id}
                   onClick={() => setSelectedProperty(item)}
@@ -1001,7 +871,13 @@ export default function JustGulbergApp() {
                       </div>
 
                       <h3 className="text-base font-bold text-white line-clamp-1 group-hover:text-amber-400 transition-colors">
-                        {item.title}
+                        <Link
+                          href={`/listings/${item.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:text-amber-400 transition-colors"
+                        >
+                          {item.title}
+                        </Link>
                       </h3>
 
                       <p className="text-xs text-slate-400 flex items-center gap-1.5">
@@ -1024,6 +900,15 @@ export default function JustGulbergApp() {
                       </div>
 
                       <div className="flex items-center gap-1.5">
+                        <Link
+                          href={`/listings/${item.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-medium flex items-center gap-1 transition-colors"
+                          title="View full property page"
+                        >
+                          <Maximize2 className="w-3.5 h-3.5" />
+                          View
+                        </Link>
                         {item.isMyListing ? (
                           <>
                             <button
@@ -1529,6 +1414,14 @@ export default function JustGulbergApp() {
               </div>
 
               {/* Actions */}
+              <Link
+                href={`/listings/${selectedProperty.id}`}
+                onClick={() => setSelectedProperty(null)}
+                className="w-full h-11 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white font-bold text-xs flex items-center justify-center gap-2 transition-colors"
+              >
+                <Maximize2 className="w-4 h-4" />
+                View Full Property Page
+              </Link>
               <div className="flex flex-col sm:flex-row gap-2 pt-1">
                 {selectedProperty.isMyListing ? (
                   <div className="flex gap-2 flex-1">

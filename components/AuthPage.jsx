@@ -150,6 +150,7 @@ export default function AuthPage({
               full_name: fullName.trim(),
               phone: phone.trim(),
             },
+            emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
           },
         });
 

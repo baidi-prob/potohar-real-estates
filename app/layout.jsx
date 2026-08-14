@@ -17,7 +17,7 @@ export const metadata = {
   openGraph: {
     title: 'Potohar Real Estates | Gulberg Islamabad Properties',
     description: 'Buy and sell plots, built houses, and luxury farmhouses in Gulberg Greens & Gulberg Residencia, Islamabad.',
-    url: 'https://potohar-real-estates.vercel.app',
+    url: getSiteUrl(),
     siteName: 'Potohar Real Estates',
     locale: 'en_PK',
     type: 'website',

@@ -243,10 +243,12 @@ export default function JustGulbergApp() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
+      console.log('[AUTH-DEBUG] event:', event, 'session:', !!session, session ? `expires_at=${session.expires_at} now=${Date.now() / 1000}` : '');
       if (session?.user) {
         setAuthUserId(session.user.id);
         setIsLoggedIn(true);
       } else if (event === 'SIGNED_OUT') {
+        console.log('[AUTH-DEBUG] SIGNED_OUT fired with no session');
         setAuthUserId(null);
         setIsLoggedIn(false);
         setCurrentUser(null);

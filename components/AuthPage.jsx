@@ -3,12 +3,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Mail,
-  Lock,
   Phone,
   ShieldCheck,
   ArrowRight,
-  Eye,
-  EyeOff,
   KeyRound,
   RefreshCw,
   AlertCircle,
@@ -17,6 +14,7 @@ import {
   UserPlus,
   LogIn,
   CheckCircle2,
+  User,
 } from 'lucide-react';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase/client';
 import { upsertProfile } from '../lib/listings';
@@ -33,17 +31,13 @@ export default function AuthPage({
   const [authType, setAuthType] = useState(initialMode);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authMessage, setAuthMessage] = useState('');
-  const [showForgotPassword, setShowForgotPassword] = useState(false);
-  const [resetEmailSent, setResetEmailSent] = useState(false);
 
-  // Real email-OTP verification step
-  const [authStep, setAuthStep] = useState('form'); // 'form' | 'otp' | 'check_email'
+  // OTP verification step
+  const [authStep, setAuthStep] = useState('form'); // 'form' | 'otp'
   const [otpEmail, setOtpEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [otpResendIn, setOtpResendIn] = useState(0);
@@ -97,7 +91,7 @@ export default function AuthPage({
   // All hooks above; early return after them so the hook count never changes.
   if (!isOpen) return null;
 
-  // Send a real 6-digit OTP email via Supabase Auth
+  // Send a real 6-digit code via Supabase Auth
   const sendOtp = async (targetEmail, shouldCreateUser) => {
     const supabase = getSupabase();
     if (!supabase) return false;
@@ -106,6 +100,12 @@ export default function AuthPage({
       email: targetEmail.trim(),
       options: {
         shouldCreateUser,
+        data: shouldCreateUser
+          ? {
+              full_name: fullName?.trim() || undefined,
+              phone: phone?.trim() || undefined,
+            }
+          : undefined,
         emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
       },
     });
@@ -114,7 +114,8 @@ export default function AuthPage({
     return true;
   };
 
-  const handleSubmit = async (e) => {
+  // Step 1: send the 6-digit code to the entered email
+  const handleSendCode = async (e) => {
     e.preventDefault();
     setAuthError('');
     setAuthMessage('');
@@ -123,74 +124,8 @@ export default function AuthPage({
       setAuthError('Please enter a valid email address.');
       return;
     }
-    if (!password || password.length < 6) {
-      setAuthError('Password should be at least 6 characters.');
-      return;
-    }
     if (authType === 'signup' && !fullName.trim()) {
       setAuthError('Please type your name or agency name.');
-      return;
-    }
-
-    if (!supabaseLive) {
-      setAuthError('Supabase is not connected yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local.');
-      return;
-    }
-
-    setIsLoading(true);
-    const supabase = getSupabase();
-
-    try {
-      if (authType === 'signup') {
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: {
-            data: {
-              full_name: fullName.trim(),
-              phone: phone.trim(),
-            },
-            emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-          },
-        });
-
-        if (error) throw error;
-
-        if (data.session) {
-          const { name, phone: phoneFmt } = await ensureProfile(data.session, fullName, phone);
-          onAuthSuccess?.(buildUserPayload(data.session, name, phoneFmt));
-        } else {
-          // Email confirmation is required: send a 6-digit code as the
-          // verification step, mirroring the app's existing "enter your code" UX.
-          setOtpEmail(email.trim());
-          setOtpCode('');
-          setAuthMessage('Account created! We emailed you a verification code to confirm your email.');
-          setAuthStep('otp');
-          await sendOtp(email.trim(), true);
-          startOtpResendTimer();
-        }
-      } else {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-
-        if (error) throw error;
-
-        const { name, phone: phoneFmt } = await ensureProfile(data.session, fullName, phone);
-        onAuthSuccess?.(buildUserPayload(data.session, name, phoneFmt));
-      }
-    } catch (err) {
-      setAuthError(err.message || 'Something went wrong. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // "Use a 6-digit code instead" — real OTP login/signup via email
-  const handleUseCodeInstead = async () => {
-    if (!email.trim() || !email.includes('@')) {
-      setAuthError('Enter your email address first.');
       return;
     }
 
@@ -199,8 +134,6 @@ export default function AuthPage({
       return;
     }
 
-    setAuthError('');
-    setAuthMessage('');
     setIsLoading(true);
     try {
       setOtpEmail(email.trim());
@@ -210,12 +143,13 @@ export default function AuthPage({
       setAuthStep('otp');
       startOtpResendTimer();
     } catch (err) {
-      setAuthError(err.message || 'Could not send the verification code.');
+      setAuthError(err.message || 'Could not send the verification code. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Resend the 6-digit code
   const handleResendOtp = async () => {
     if (otpResendIn > 0) return;
     setAuthError('');
@@ -232,7 +166,7 @@ export default function AuthPage({
     }
   };
 
-  // Verify the real OTP code with Supabase, then treat it as a login
+  // Step 2: verify the code — logs the user in (creates account for new users)
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     if (!/^\d{6}$/.test(otpCode.trim())) {
@@ -257,6 +191,8 @@ export default function AuthPage({
       });
       if (error) throw error;
 
+      console.log('[AUTH-DEBUG] verifyOtp success, session:', !!data.session, data.session ? `expires_at=${data.session.expires_at} now=${Date.now()/1000} user=${data.session.user?.email} confirmed=${data.session.user?.email_confirmed_at || 'null'}` : '');
+
       if (data.session) {
         const { name, phone: phoneFmt } = await ensureProfile(data.session, fullName, phone);
         onAuthSuccess?.(buildUserPayload(data.session, name, phoneFmt));
@@ -267,30 +203,6 @@ export default function AuthPage({
       setAuthError(err.message || 'Invalid or expired code. Please try again.');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleForgotPassword = async (e) => {
-    e.preventDefault();
-    if (!email.trim()) {
-      setAuthError('Enter your email first.');
-      return;
-    }
-
-    if (!supabaseLive) {
-      setAuthError('Supabase is not connected yet. Add the Supabase keys to .env.local.');
-      return;
-    }
-
-    const supabase = getSupabase();
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: window.location.origin,
-    });
-
-    if (error) {
-      setAuthError(error.message);
-    } else {
-      setResetEmailSent(true);
     }
   };
 
@@ -336,9 +248,9 @@ export default function AuthPage({
             <div className="mb-5 p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
               <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">How it works</p>
               <ol className="text-xs text-slate-400 space-y-1.5 list-none">
-                <li><span className="text-amber-400 font-bold">1.</span> New account or already registered</li>
-                <li><span className="text-amber-400 font-bold">2.</span> Enter email, password & mobile</li>
-                <li><span className="text-amber-400 font-bold">3.</span> Post your property — buyers can contact you</li>
+                <li><span className="text-amber-400 font-bold">1.</span> Enter your email address</li>
+                <li><span className="text-amber-400 font-bold">2.</span> We send you a 6-digit code</li>
+                <li><span className="text-amber-400 font-bold">3.</span> Enter the code — you're in. Post your property</li>
               </ol>
             </div>
           )}
@@ -418,9 +330,13 @@ export default function AuthPage({
                   </button>
                 )}
               </div>
+
+              <p className="text-center text-[11px] text-slate-500">
+                Check your inbox (and spam/promotions) for the code.
+              </p>
             </form>
           ) : (
-            /* -------------------- SIGN IN / SIGN UP FORM -------------------- */
+            /* -------------------- EMAIL + CODE FORM -------------------- */
             <div className="space-y-4">
               <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-950 border border-slate-800 mb-4">
                 <button
@@ -444,35 +360,32 @@ export default function AuthPage({
               </div>
 
               {authError && (
-                <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex gap-2">
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                   <span>{authError}</span>
                 </div>
               )}
 
               {authMessage && (
-                <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
                   {authMessage}
                 </div>
               )}
 
-              <div className="relative flex items-center justify-center mb-1">
-                <div className="border-t border-slate-800 w-full" />
-                <span className="bg-slate-900 px-3 text-xs text-slate-500 shrink-0">Sign in with email</span>
-                <div className="border-t border-slate-800 w-full" />
-              </div>
-
-              <form onSubmit={handleSubmit} className="space-y-3.5">
+              <form onSubmit={handleSendCode} className="space-y-3.5">
                 {authType === 'signup' && (
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-1">Your name or agency name</label>
-                    <input
-                      type="text"
-                      value={fullName}
-                      onChange={(e) => setFullName(e.target.value)}
-                      placeholder="e.g. Chaudhry Real Estate"
-                      className="w-full h-11 px-3.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-500"
-                    />
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        type="text"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        placeholder="e.g. Chaudhry Real Estate"
+                        className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-500"
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -491,42 +404,13 @@ export default function AuthPage({
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <label className="text-sm font-medium text-slate-300">Password</label>
-                    {authType === 'login' && (
-                      <button type="button" onClick={() => setShowForgotPassword(true)} className="text-xs text-amber-400">
-                        Forgot password?
-                      </button>
-                    )}
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="At least 6 characters"
-                      required
-                      className="w-full h-11 pl-9 pr-10 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
                 {authType === 'signup' && (
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-1">Your mobile number</label>
                     <p className="text-[11px] text-slate-500 mb-1.5">Buyers will call this number (+92 added automatically)</p>
                     <div className="flex gap-2">
                       <span className="h-11 px-3 rounded-xl bg-slate-800 border border-slate-700 text-amber-400 font-mono text-sm flex items-center gap-1 shrink-0">
-                        🇵🇰 +92
+                        +92
                       </span>
                       <div className="relative flex-1">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -548,23 +432,15 @@ export default function AuthPage({
                   className="w-full h-12 mt-1 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isLoading ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" /> Please wait...</>
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> Sending code...</>
                   ) : (
-                    <><span>{authType === 'signup' ? 'Create account & continue' : 'Sign in'}</span><ArrowRight className="w-4 h-4" /></>
+                    <><span>{authType === 'signup' ? 'Create account & send code' : 'Send me a code'}</span><ArrowRight className="w-4 h-4" /></>
                   )}
                 </button>
 
-                {authType === 'login' && (
-                  <button
-                    type="button"
-                    onClick={handleUseCodeInstead}
-                    disabled={isLoading}
-                    className="w-full py-2 text-xs text-slate-400 hover:text-emerald-400 flex items-center justify-center gap-1.5"
-                  >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    Use a 6-digit code from my email instead
-                  </button>
-                )}
+                <p className="text-center text-[11px] text-slate-500">
+                  No password needed — we email you a 6-digit code each time.
+                </p>
               </form>
             </div>
           )}
@@ -577,43 +453,6 @@ export default function AuthPage({
           </div>
         </div>
       </div>
-
-      {showForgotPassword && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-slate-900 border border-slate-800 p-6 space-y-4 relative">
-            <button onClick={() => { setShowForgotPassword(false); setResetEmailSent(false); }} className="absolute top-4 right-4 text-slate-400 hover:text-white">
-              <X className="w-4 h-4" />
-            </button>
-            <div className="text-center">
-              <KeyRound className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-              <h3 className="text-base font-bold text-white">Forgot your password?</h3>
-              <p className="text-sm text-slate-400 mt-1">We will email you a link to reset it.</p>
-            </div>
-            {resetEmailSent ? (
-              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm text-center space-y-2">
-                <p>Check your email for the reset link.</p>
-                <button onClick={() => { setShowForgotPassword(false); setResetEmailSent(false); }} className="w-full h-10 rounded-lg bg-emerald-500 text-slate-950 font-bold text-sm">
-                  Back to sign in
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleForgotPassword} className="space-y-3">
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="your email"
-                  required
-                  className="w-full h-10 px-3.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm"
-                />
-                <button type="submit" className="w-full h-10 rounded-xl bg-amber-500 text-slate-950 font-bold text-sm">
-                  Send reset link
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

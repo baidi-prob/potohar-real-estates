@@ -6,7 +6,6 @@ import {
   Phone,
   ShieldCheck,
   ArrowRight,
-  KeyRound,
   RefreshCw,
   AlertCircle,
   X,
@@ -17,7 +16,6 @@ import {
   User,
 } from 'lucide-react';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase/client';
-import { upsertProfile } from '../lib/listings';
 
 const OTP_RESEND_SECONDS = 60;
 
@@ -36,45 +34,22 @@ export default function AuthPage({
   const [authError, setAuthError] = useState('');
   const [authMessage, setAuthMessage] = useState('');
 
-  // OTP verification step
-  const [authStep, setAuthStep] = useState('form'); // 'form' | 'otp'
-  const [otpEmail, setOtpEmail] = useState('');
-  const [otpCode, setOtpCode] = useState('');
-  const [otpResendIn, setOtpResendIn] = useState(0);
-  const otpTimerRef = useRef(null);
+  // Sign-in link step
+  const [authStep, setAuthStep] = useState('form'); // 'form' | 'sent'
+  const [sentEmail, setSentEmail] = useState('');
+  const [resendIn, setResendIn] = useState(0);
+  const resendTimerRef = useRef(null);
 
   const supabaseLive = isSupabaseConfigured();
 
-  const buildUserPayload = (session, profileName, profilePhone) => ({
-    id: session.user.id,
-    email: session.user.email,
-    phone: profilePhone || session.user.user_metadata?.phone || '',
-    name: profileName || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Seller',
-  });
-
-  const ensureProfile = async (session, profileName, profilePhone) => {
-    const phoneFormatted = profilePhone?.trim()
-      ? `+92 ${profilePhone.replace(/^\+92\s*/, '').trim()}`
-      : session.user.user_metadata?.phone
-      ? `+92 ${session.user.user_metadata.phone.replace(/^\+92\s*/, '').trim()}`
-      : '';
-    const name = profileName?.trim() || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Seller';
-    await upsertProfile(session.user.id, {
-      fullName: name,
-      phone: phoneFormatted || null,
-      email: session.user.email,
-    });
-    return { name, phone: phoneFormatted };
-  };
-
-  const startOtpResendTimer = () => {
-    if (otpTimerRef.current) clearInterval(otpTimerRef.current);
-    setOtpResendIn(OTP_RESEND_SECONDS);
-    otpTimerRef.current = setInterval(() => {
-      setOtpResendIn((prev) => {
+  const startResendTimer = () => {
+    if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+    setResendIn(OTP_RESEND_SECONDS);
+    resendTimerRef.current = setInterval(() => {
+      setResendIn((prev) => {
         if (prev <= 1) {
-          clearInterval(otpTimerRef.current);
-          otpTimerRef.current = null;
+          clearInterval(resendTimerRef.current);
+          resendTimerRef.current = null;
           return 0;
         }
         return prev - 1;
@@ -84,15 +59,15 @@ export default function AuthPage({
 
   useEffect(() => {
     return () => {
-      if (otpTimerRef.current) clearInterval(otpTimerRef.current);
+      if (resendTimerRef.current) clearInterval(resendTimerRef.current);
     };
   }, []);
 
   // All hooks above; early return after them so the hook count never changes.
   if (!isOpen) return null;
 
-  // Send a real 6-digit code via Supabase Auth
-  const sendOtp = async (targetEmail, shouldCreateUser) => {
+  // Send a one-time sign-in link via Supabase Auth
+  const sendSignInLink = async (targetEmail, shouldCreateUser) => {
     const supabase = getSupabase();
     if (!supabase) return false;
 
@@ -114,7 +89,7 @@ export default function AuthPage({
     return true;
   };
 
-  // Step 1: send the 6-digit code to the entered email
+  // Step 1: send the sign-in link to the entered email
   const handleSendCode = async (e) => {
     e.preventDefault();
     setAuthError('');
@@ -136,71 +111,30 @@ export default function AuthPage({
 
     setIsLoading(true);
     try {
-      setOtpEmail(email.trim());
-      setOtpCode('');
-      await sendOtp(email.trim(), authType === 'signup');
-      setAuthMessage(`We sent a 6-digit code to ${email.trim()}.`);
-      setAuthStep('otp');
-      startOtpResendTimer();
+      setSentEmail(email.trim());
+      await sendSignInLink(email.trim(), authType === 'signup');
+      setAuthMessage(`We sent a sign-in link to ${email.trim()}.`);
+      setAuthStep('sent');
+      startResendTimer();
     } catch (err) {
-      setAuthError(err.message || 'Could not send the verification code. Please try again.');
+      setAuthError(err.message || 'Could not send the sign-in link. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Resend the 6-digit code
+  // Resend the sign-in link
   const handleResendOtp = async () => {
-    if (otpResendIn > 0) return;
+    if (resendIn > 0) return;
     setAuthError('');
     setAuthMessage('');
     setIsLoading(true);
     try {
-      await sendOtp(otpEmail, authType === 'signup');
-      setAuthMessage(`A new 6-digit code was sent to ${otpEmail}.`);
-      startOtpResendTimer();
+      await sendSignInLink(sentEmail, authType === 'signup');
+      setAuthMessage(`A new sign-in link was sent to ${sentEmail}.`);
+      startResendTimer();
     } catch (err) {
-      setAuthError(err.message || 'Could not resend the code.');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Step 2: verify the code — logs the user in (creates account for new users)
-  const handleVerifyOtp = async (e) => {
-    e.preventDefault();
-    if (!/^\d{6}$/.test(otpCode.trim())) {
-      setAuthError('Please enter the 6-digit code from your email.');
-      return;
-    }
-
-    if (!supabaseLive) {
-      setAuthError('Supabase is not connected yet.');
-      return;
-    }
-
-    setIsLoading(true);
-    setAuthError('');
-    setAuthMessage('');
-    try {
-      const supabase = getSupabase();
-      const { data, error } = await supabase.auth.verifyOtp({
-        email: otpEmail.trim(),
-        token: otpCode.trim(),
-        type: 'email',
-      });
-      if (error) throw error;
-
-      console.log('[AUTH-DEBUG] verifyOtp success, session:', !!data.session, data.session ? `expires_at=${data.session.expires_at} now=${Date.now()/1000} user=${data.session.user?.email} confirmed=${data.session.user?.email_confirmed_at || 'null'}` : '');
-
-      if (data.session) {
-        const { name, phone: phoneFmt } = await ensureProfile(data.session, fullName, phone);
-        onAuthSuccess?.(buildUserPayload(data.session, name, phoneFmt));
-      } else {
-        setAuthError('Could not verify the code. Please try again.');
-      }
-    } catch (err) {
-      setAuthError(err.message || 'Invalid or expired code. Please try again.');
+      setAuthError(err.message || 'Could not resend the link.');
     } finally {
       setIsLoading(false);
     }
@@ -249,15 +183,15 @@ export default function AuthPage({
               <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">How it works</p>
               <ol className="text-xs text-slate-400 space-y-1.5 list-none">
                 <li><span className="text-amber-400 font-bold">1.</span> Enter your email address</li>
-                <li><span className="text-amber-400 font-bold">2.</span> We send you a 6-digit code</li>
-                <li><span className="text-amber-400 font-bold">3.</span> Enter the code — you're in. Post your property</li>
+                <li><span className="text-amber-400 font-bold">2.</span> We email you a sign-in link</li>
+                <li><span className="text-amber-400 font-bold">3.</span> Click it — you're in. Post your property</li>
               </ol>
             </div>
           )}
 
-          {authStep === 'otp' ? (
-            /* -------------------- 6-DIGIT CODE VERIFICATION -------------------- */
-            <form onSubmit={handleVerifyOtp} className="space-y-4 animate-fadeIn">
+          {authStep === 'sent' ? (
+            /* -------------------- SIGN-IN LINK SENT -------------------- */
+            <div className="space-y-4 animate-fadeIn">
               <button
                 type="button"
                 onClick={() => { setAuthStep('form'); setAuthError(''); setAuthMessage(''); }}
@@ -268,11 +202,12 @@ export default function AuthPage({
 
               <div className="text-center space-y-2">
                 <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/20">
-                  <KeyRound className="w-6 h-6" />
+                  <Mail className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-white">Enter your verification code</h3>
+                <h3 className="text-lg font-bold text-white">Check your email</h3>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  We sent a 6-digit code to <span className="text-amber-400 font-semibold">{otpEmail}</span>.
+                  We sent a sign-in link to <span className="text-amber-400 font-semibold">{sentEmail}</span>. Open
+                  your email and click the button to finish signing in.
                 </p>
               </div>
 
@@ -290,51 +225,46 @@ export default function AuthPage({
                 </div>
               )}
 
-              <input
-                type="text"
-                inputMode="numeric"
-                autoFocus
-                maxLength={6}
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                onPaste={(e) => {
-                  const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
-                  if (pasted) { e.preventDefault(); setOtpCode(pasted); }
-                }}
-                placeholder="000000"
-                className="w-full h-14 rounded-xl bg-slate-800 border border-slate-700 text-white text-2xl font-mono text-center tracking-[0.5em] focus:outline-none focus:border-amber-500"
-              />
-
-              <button
-                type="submit"
-                disabled={isLoading}
-                className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {isLoading ? (
-                  <><RefreshCw className="w-4 h-4 animate-spin" /> Verifying...</>
-                ) : (
-                  <><span>Verify & continue</span><ArrowRight className="w-4 h-4" /></>
-                )}
-              </button>
+              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Step 1</p>
+                    <p className="text-xs text-slate-400">Check your inbox (and spam/promotions)</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
+                    <ArrowRight className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-white">Step 2</p>
+                    <p className="text-xs text-slate-400">Click the "Sign in" button in the email</p>
+                  </div>
+                </div>
+              </div>
 
               <div className="text-center">
-                {otpResendIn > 0 ? (
-                  <p className="text-xs text-slate-500">Resend code in {otpResendIn}s</p>
+                {resendIn > 0 ? (
+                  <p className="text-xs text-slate-500">Resend link in {resendIn}s</p>
                 ) : (
                   <button
                     type="button"
                     onClick={handleResendOtp}
-                    className="text-xs text-amber-400 hover:text-amber-300 font-medium"
+                    disabled={isLoading}
+                    className="text-xs text-amber-400 hover:text-amber-300 font-medium disabled:opacity-50"
                   >
-                    Resend the code
+                    {isLoading ? 'Sending...' : "Didn't get it? Resend the link"}
                   </button>
                 )}
               </div>
 
               <p className="text-center text-[11px] text-slate-500">
-                Check your inbox (and spam/promotions) for the code.
+                The link expires shortly and can only be used once.
               </p>
-            </form>
+            </div>
           ) : (
             /* -------------------- EMAIL + CODE FORM -------------------- */
             <div className="space-y-4">
@@ -432,14 +362,14 @@ export default function AuthPage({
                   className="w-full h-12 mt-1 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {isLoading ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" /> Sending code...</>
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> Sending link...</>
                   ) : (
-                    <><span>{authType === 'signup' ? 'Create account & send code' : 'Send me a code'}</span><ArrowRight className="w-4 h-4" /></>
+                    <><span>{authType === 'signup' ? 'Create account & send link' : 'Email me a sign-in link'}</span><ArrowRight className="w-4 h-4" /></>
                   )}
                 </button>
 
                 <p className="text-center text-[11px] text-slate-500">
-                  No password needed — we email you a 6-digit code each time.
+                  No password needed — we email you a sign-in link each time.
                 </p>
               </form>
             </div>

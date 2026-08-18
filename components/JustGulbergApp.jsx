@@ -11,6 +11,7 @@ import {
   removeListing,
   uploadPropertyImage,
   getProfile,
+  upsertProfile,
   fetchFavoritesFromDb,
   toggleFavoriteInDb,
 } from '../lib/listings';
@@ -245,8 +246,24 @@ export default function JustGulbergApp() {
       if (cancelled) return;
       console.log('[AUTH-DEBUG] event:', event, 'session:', !!session, session ? `expires_at=${session.expires_at} now=${Date.now() / 1000}` : '');
       if (session?.user) {
-        setAuthUserId(session.user.id);
+        const uid = session.user.id;
+        setAuthUserId(uid);
         setIsLoggedIn(true);
+        setShowAuthModal(false);
+        getProfile(uid).then((profile) => {
+          if (cancelled) return;
+          setCurrentUser({
+            id: uid,
+            email: session.user.email,
+            phone: profile?.phone || session.user.user_metadata?.phone || '',
+            name: profile?.full_name || session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
+          });
+        });
+        upsertProfile(uid, {
+          fullName: session.user.user_metadata?.full_name || session.user.email?.split('@')[0],
+          phone: session.user.user_metadata?.phone || null,
+          email: session.user.email,
+        }).catch(() => {});
       } else if (event === 'SIGNED_OUT') {
         console.log('[AUTH-DEBUG] SIGNED_OUT fired with no session');
         setAuthUserId(null);

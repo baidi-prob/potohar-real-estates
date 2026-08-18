@@ -214,6 +214,43 @@ export default function JustGulbergApp() {
     return () => clearTimeout(t);
   }, [supabaseLive, authUserId, activeTab, sectorFilter, blockFilter, sizeFilter, typeFilter, featureFilter, maxPrice, searchQuery, sortOrder]);
 
+  // On-screen auth debug badge (temporary; helps diagnose session drops)
+  const [authDebug, setAuthDebug] = useState(null);
+  const lastSessionRef = useRef(null);
+
+  const reportAuth = (event, session) => {
+    const remaining = session?.expires_at ? Math.round(session.expires_at - Date.now() / 1000) : null;
+    const prev = lastSessionRef.current;
+    let msg =
+      `${event}` +
+      (session?.user ? ` user=${session.user.email}` : '') +
+      (remaining !== null ? ` expires_in=${remaining}s` : '') +
+      (session?.expires_at
+        ? ` exp_at=${session.expires_at} now=${Math.round(Date.now() / 1000)}`
+        : '');
+    if (!session && prev?.expires_at) {
+      const prevRemaining = Math.round(prev.expires_at - Date.now() / 1000);
+      msg += ` | last session had exp_at=${prev.expires_at} (${prevRemaining}s remained)`;
+    }
+    try {
+      localStorage.setItem('auth-last-event', JSON.stringify({ msg, at: Date.now() }));
+    } catch (e) { /* ignore */ }
+    lastSessionRef.current = session || lastSessionRef.current;
+    setAuthDebug({ msg, kind: event === 'SIGNED_OUT' ? 'err' : 'ok' });
+  };
+
+  // Show what happened before a possible page reload
+  useEffect(() => {
+    let prev = null;
+    try {
+      prev = JSON.parse(localStorage.getItem('auth-last-event') || 'null');
+    } catch (e) { /* ignore */ }
+    if (prev) {
+      const minsAgo = Math.round((Date.now() - prev.at) / 60000);
+      setAuthDebug({ msg: `PAGE RELOADED ${minsAgo} min after: ${prev.msg}`, kind: 'warn' });
+    }
+  }, []);
+
   // Session restore + live auth state listener
   useEffect(() => {
     if (!supabaseLive) return undefined;
@@ -244,7 +281,8 @@ export default function JustGulbergApp() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
-      console.log('[AUTH-DEBUG] event:', event, 'session:', !!session, session ? `expires_at=${session.expires_at} now=${Date.now() / 1000}` : '');
+      console.log('[AUTH-DEBUG] event:', event, 'session:', !!session, session ? `expires_at=${session.expires_at} now=${Date.now() / 1000} user=${session.user.email}` : '');
+      reportAuth(event, session);
       if (session?.user) {
         const uid = session.user.id;
         setAuthUserId(uid);
@@ -1783,6 +1821,19 @@ export default function JustGulbergApp() {
         onAuthSuccess={handleAuthSuccess}
         reason={authModalReason}
       />
+
+      {/* TEMPORARY AUTH DEBUG BADGE */}
+      {authDebug && (
+        <div className={`fixed bottom-2 left-2 z-[60] max-w-[95vw] text-[10px] font-mono px-2 py-1.5 rounded-lg border ${
+          authDebug.kind === 'err'
+            ? 'bg-red-950/90 border-red-500/60 text-red-300'
+            : authDebug.kind === 'warn'
+            ? 'bg-amber-950/90 border-amber-500/60 text-amber-200'
+            : 'bg-slate-950/90 border-emerald-500/50 text-emerald-300'
+        }`}>
+          <span className="font-bold">AUTH:</span> {authDebug.msg}
+        </div>
+      )}
 
       {/* FOOTER */}
       <footer className="bg-slate-900 border-t border-slate-800 py-6 text-center text-xs text-slate-500">

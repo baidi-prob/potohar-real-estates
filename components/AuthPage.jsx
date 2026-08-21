@@ -1,23 +1,72 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Chrome,
+  Lock,
   Mail,
   Phone,
-  ShieldCheck,
-  ArrowRight,
   RefreshCw,
-  AlertCircle,
-  X,
-  ArrowLeft,
-  UserPlus,
-  LogIn,
-  CheckCircle2,
+  ShieldCheck,
   User,
+  UserPlus,
+  X,
 } from 'lucide-react';
 import { getSupabase, isSupabaseConfigured } from '../lib/supabase/client';
 
-const OTP_RESEND_SECONDS = 60;
+const RESEND_SECONDS = 60;
+
+function ErrorMessage({ children }) {
+  if (!children) return null;
+  return (
+    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex gap-2">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+function OtpBoxes({ value, onChange }) {
+  const refs = useRef([]);
+  const digits = value.padEnd(6, '').slice(0, 6).split('');
+
+  useEffect(() => {
+    refs.current[0]?.focus();
+  }, []);
+
+  const updateDigit = (index, nextValue) => {
+    const digit = nextValue.replace(/\D/g, '').slice(-1);
+    const next = digits.map((item) => item || '');
+    next[index] = digit;
+    onChange(next.join(''));
+    if (digit && index < 5) refs.current[index + 1]?.focus();
+  };
+
+  return (
+    <div className="flex justify-center gap-2 sm:gap-3" aria-label="6-digit verification code">
+      {digits.map((digit, index) => (
+        <input
+          key={index}
+          ref={(element) => { refs.current[index] = element; }}
+          value={digit}
+          inputMode="numeric"
+          maxLength={1}
+          autoComplete={index === 0 ? 'one-time-code' : 'off'}
+          onChange={(event) => updateDigit(index, event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Backspace' && !digit && index > 0) refs.current[index - 1]?.focus();
+          }}
+          className="w-11 h-14 sm:w-12 rounded-xl bg-slate-800 border border-slate-700 text-white text-center text-xl font-bold focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
+          aria-label={`Digit ${index + 1}`}
+        />
+      ))}
+    </div>
+  );
+}
 
 export default function AuthPage({
   isOpen = true,
@@ -27,360 +76,231 @@ export default function AuthPage({
   initialMode = 'signup',
 }) {
   const [authType, setAuthType] = useState(initialMode);
+  const [authStep, setAuthStep] = useState('form');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [sentEmail, setSentEmail] = useState('');
+  const [resendIn, setResendIn] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authMessage, setAuthMessage] = useState('');
-
-  // Sign-in link step
-  const [authStep, setAuthStep] = useState('form'); // 'form' | 'sent'
-  const [sentEmail, setSentEmail] = useState('');
-  const [resendIn, setResendIn] = useState(0);
   const resendTimerRef = useRef(null);
-
   const supabaseLive = isSupabaseConfigured();
+
+  useEffect(() => () => {
+    if (resendTimerRef.current) clearInterval(resendTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen || !supabaseLive) return undefined;
+    let active = true;
+    getSession().then(async (session) => {
+      if (!active || !session) return;
+      const { data: profile } = await getSupabase().from('profiles').select('email, is_verified').eq('id', session.user.id).maybeSingle();
+      if (!active || profile?.is_verified) return;
+      try {
+        const result = await requestOtp(session);
+        if (!active || result.verified) return;
+        setSentEmail(result.email || session.user.email || '');
+        setAuthStep('verify');
+        startResendTimer();
+      } catch (error) {
+        if (active) setAuthError(error.message || 'Could not send a verification code.');
+      }
+    });
+    return () => { active = false; };
+  }, [isOpen, supabaseLive]);
 
   const startResendTimer = () => {
     if (resendTimerRef.current) clearInterval(resendTimerRef.current);
-    setResendIn(OTP_RESEND_SECONDS);
+    setResendIn(RESEND_SECONDS);
     resendTimerRef.current = setInterval(() => {
-      setResendIn((prev) => {
-        if (prev <= 1) {
+      setResendIn((previous) => {
+        if (previous <= 1) {
           clearInterval(resendTimerRef.current);
           resendTimerRef.current = null;
           return 0;
         }
-        return prev - 1;
+        return previous - 1;
       });
     }, 1000);
   };
 
-  useEffect(() => {
-    return () => {
-      if (resendTimerRef.current) clearInterval(resendTimerRef.current);
-    };
-  }, []);
-
-  // All hooks above; early return after them so the hook count never changes.
-  if (!isOpen) return null;
-
-  // Send a one-time sign-in link via Supabase Auth
-  const sendSignInLink = async (targetEmail, shouldCreateUser) => {
+  const getSession = async () => {
     const supabase = getSupabase();
-    if (!supabase) return false;
+    const { data } = await supabase.auth.getSession();
+    return data.session;
+  };
 
-    const { error } = await supabase.auth.signInWithOtp({
-      email: targetEmail.trim(),
-      options: {
-        shouldCreateUser,
-        data: shouldCreateUser
-          ? {
-              full_name: fullName?.trim() || undefined,
-              phone: phone?.trim() || undefined,
-            }
-          : undefined,
-        emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-      },
+  const requestOtp = async (session) => {
+    const response = await fetch('/api/auth/otp/request', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}` },
     });
-
-    if (error) throw error;
-    return true;
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not send a verification code.');
+    return result;
   };
 
-  // Step 1: send the sign-in link to the entered email
-  const handleSendCode = async (e) => {
-    e.preventDefault();
+  const userDataFromSession = (session) => ({
+    id: session.user.id,
+    email: session.user.email,
+    phone: phone || session.user.user_metadata?.phone || '',
+    name: fullName || session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Seller',
+  });
+
+  const finishVerifiedAuth = async (session) => {
+    const { data: profile } = await getSupabase().from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+    onAuthSuccess?.({
+      ...userDataFromSession(session),
+      phone: profile?.phone || userDataFromSession(session).phone,
+      name: profile?.full_name || userDataFromSession(session).name,
+    });
+  };
+
+  const handleGoogle = async () => {
     setAuthError('');
-    setAuthMessage('');
-
-    if (!email.trim() || !email.includes('@')) {
-      setAuthError('Please enter a valid email address.');
-      return;
-    }
-    if (authType === 'signup' && !fullName.trim()) {
-      setAuthError('Please type your name or agency name.');
-      return;
-    }
-
     if (!supabaseLive) {
-      setAuthError('Supabase is not connected yet. Add the Supabase keys to .env.local.');
+      setAuthError('Connect Supabase before enabling Google sign-in.');
       return;
     }
-
     setIsLoading(true);
-    try {
-      setSentEmail(email.trim());
-      await sendSignInLink(email.trim(), authType === 'signup');
-      setAuthMessage(`We sent a sign-in link to ${email.trim()}.`);
-      setAuthStep('sent');
-      startResendTimer();
-    } catch (err) {
-      setAuthError(err.message || 'Could not send the sign-in link. Please try again.');
-    } finally {
+    const { error } = await getSupabase().auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/api/auth/google/callback` },
+    });
+    if (error) {
+      setAuthError(error.message);
       setIsLoading(false);
     }
   };
 
-  // Resend the sign-in link
-  const handleResendOtp = async () => {
-    if (resendIn > 0) return;
+  const handleCredentials = async (event) => {
+    event.preventDefault();
     setAuthError('');
     setAuthMessage('');
+
+    if (!supabaseLive) return setAuthError('Connect Supabase in .env.local before creating an account.');
+    if (authType === 'signup' && !fullName.trim()) return setAuthError('Enter your name or agency name.');
+    if (password.length < 8) return setAuthError('Password must be at least 8 characters.');
+
     setIsLoading(true);
     try {
-      await sendSignInLink(sentEmail, authType === 'signup');
-      setAuthMessage(`A new sign-in link was sent to ${sentEmail}.`);
+      const supabase = getSupabase();
+      const authResult = authType === 'signup'
+        ? await supabase.auth.signUp({
+            email: email.trim(),
+            password,
+            options: { data: { full_name: fullName.trim(), phone: phone.trim() } },
+          })
+        : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+
+      if (authResult.error) throw authResult.error;
+      if (!authResult.data.session) {
+        throw new Error('Supabase email confirmation must be disabled. The app uses its own 6-digit verification step.');
+      }
+
+      const session = authResult.data.session;
+      const otpResult = await requestOtp(session);
+      if (otpResult.verified) return finishVerifiedAuth(session);
+      setSentEmail(email.trim());
+      setAuthStep('verify');
+      setOtp('');
+      setAuthMessage(`We sent a 6-digit code to ${email.trim()}.`);
       startResendTimer();
-    } catch (err) {
-      setAuthError(err.message || 'Could not resend the link.');
+    } catch (error) {
+      setAuthError(error.message || 'Authentication failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  const handleVerify = async (event) => {
+    event.preventDefault();
+    if (otp.length !== 6) return setAuthError('Enter all 6 digits from your email.');
+    setIsLoading(true);
+    setAuthError('');
+    try {
+      const session = await getSession();
+      const response = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ code: otp }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Verification failed.');
+      await finishVerifiedAuth(session);
+    } catch (error) {
+      setAuthError(error.message || 'Verification failed.');
+      setOtp('');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendIn > 0 || isLoading) return;
+    setIsLoading(true);
+    setAuthError('');
+    try {
+      const session = await getSession();
+      const result = await requestOtp(session);
+      if (result.verified) return finishVerifiedAuth(session);
+      setAuthMessage(`A new code was sent to ${sentEmail}.`);
+      startResendTimer();
+    } catch (error) {
+      setAuthError(error.message || 'Could not resend the code.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md overflow-y-auto animate-fadeIn">
       <div className="w-full max-w-md my-auto relative z-10 animate-slideUp">
         <div className="auth-glass-card rounded-3xl p-6 sm:p-8 relative overflow-hidden border border-slate-800 shadow-2xl bg-slate-900/95">
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="absolute top-5 right-5 text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-slate-800 transition-colors"
-              title="Close"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
-
+          {onClose && <button onClick={onClose} className="absolute top-5 right-5 text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-slate-800" title="Close"><X className="w-5 h-5" /></button>}
           <div className="text-center mb-5">
             <p className="text-sm font-bold text-amber-400">Potohar Real Estates</p>
             <p className="text-xs text-emerald-400 mt-0.5">Real estate ko asaan banayen</p>
-
-            <h2 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight mt-4">
-              {reason === 'list_property' ? 'Sell your property' :
-               reason === 'my_listings' ? 'View your ads' : 'Your account'}
-            </h2>
-
-            <p className="text-sm text-slate-400 mt-2 leading-relaxed max-w-sm mx-auto">
-              {reason === 'list_property'
-                ? 'Create a free account to post your plot, house, or farmhouse. Browsing is free — no account needed.'
-                : reason === 'my_listings'
-                ? 'Sign in to see and manage the properties you have posted.'
-                : 'Sign in to manage your account and listings.'}
-            </p>
-
-            {!supabaseLive && (
-              <p className="mt-2 text-xs text-amber-400/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
-                Supabase is not connected yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local to enable real accounts.
-              </p>
-            )}
+            <h2 className="text-xl sm:text-2xl font-extrabold text-white mt-4">{authStep === 'verify' ? 'Verify your email' : reason === 'list_property' ? 'Sell your property' : 'Welcome back'}</h2>
+            <p className="text-sm text-slate-400 mt-2">{authStep === 'verify' ? `Enter the code sent to ${sentEmail}.` : 'Sign in to manage your properties or create a free seller account.'}</p>
           </div>
 
-          {reason === 'list_property' && (
-            <div className="mb-5 p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-2">
-              <p className="text-[11px] font-bold text-slate-300 uppercase tracking-wide">How it works</p>
-              <ol className="text-xs text-slate-400 space-y-1.5 list-none">
-                <li><span className="text-amber-400 font-bold">1.</span> Enter your email address</li>
-                <li><span className="text-amber-400 font-bold">2.</span> We email you a sign-in link</li>
-                <li><span className="text-amber-400 font-bold">3.</span> Click it — you're in. Post your property</li>
-              </ol>
-            </div>
-          )}
+          <ErrorMessage>{authError}</ErrorMessage>
+          {authMessage && <div className="mt-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm flex gap-2"><CheckCircle2 className="w-4 h-4 shrink-0" />{authMessage}</div>}
 
-          {authStep === 'sent' ? (
-            /* -------------------- SIGN-IN LINK SENT -------------------- */
-            <div className="space-y-4 animate-fadeIn">
-              <button
-                type="button"
-                onClick={() => { setAuthStep('form'); setAuthError(''); setAuthMessage(''); }}
-                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Back to sign in
-              </button>
-
-              <div className="text-center space-y-2">
-                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-400 flex items-center justify-center mx-auto border border-amber-500/20">
-                  <Mail className="w-6 h-6" />
-                </div>
-                <h3 className="text-lg font-bold text-white">Check your email</h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  We sent a sign-in link to <span className="text-amber-400 font-semibold">{sentEmail}</span>. Open
-                  your email and click the button to finish signing in.
-                </p>
-              </div>
-
-              {authError && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{authError}</span>
-                </div>
-              )}
-
-              {authMessage && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm flex gap-2">
-                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{authMessage}</span>
-                </div>
-              )}
-
-              <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
-                    <Mail className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">Step 1</p>
-                    <p className="text-xs text-slate-400">Check your inbox (and spam/promotions)</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-500/20">
-                    <ArrowRight className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-white">Step 2</p>
-                    <p className="text-xs text-slate-400">Click the "Sign in" button in the email</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-center">
-                {resendIn > 0 ? (
-                  <p className="text-xs text-slate-500">Resend link in {resendIn}s</p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleResendOtp}
-                    disabled={isLoading}
-                    className="text-xs text-amber-400 hover:text-amber-300 font-medium disabled:opacity-50"
-                  >
-                    {isLoading ? 'Sending...' : "Didn't get it? Resend the link"}
-                  </button>
-                )}
-              </div>
-
-              <p className="text-center text-[11px] text-slate-500">
-                The link expires shortly and can only be used once.
-              </p>
-            </div>
+          {authStep === 'verify' ? (
+            <form onSubmit={handleVerify} className="space-y-5 mt-5">
+              <OtpBoxes value={otp} onChange={setOtp} />
+              <button type="submit" disabled={isLoading} className="w-full h-12 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold flex items-center justify-center gap-2 disabled:opacity-50">{isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />} Verify account</button>
+              <div className="text-center">{resendIn > 0 ? <p className="text-xs text-slate-500">Resend code in {resendIn}s</p> : <button type="button" onClick={handleResend} className="text-xs text-amber-400 hover:text-amber-300">Resend code</button>}</div>
+              <button type="button" onClick={() => { setAuthStep('form'); setAuthError(''); setAuthMessage(''); }} className="mx-auto flex items-center gap-1 text-xs text-slate-400 hover:text-white"><ArrowLeft className="w-3 h-3" /> Back</button>
+            </form>
           ) : (
-            /* -------------------- EMAIL + CODE FORM -------------------- */
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-950 border border-slate-800 mb-4">
-                <button
-                  type="button"
-                  onClick={() => { setAuthType('signup'); setAuthError(''); setAuthMessage(''); }}
-                  className={`py-2.5 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    authType === 'signup' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <UserPlus className="w-4 h-4" /> New account
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setAuthType('login'); setAuthError(''); setAuthMessage(''); }}
-                  className={`py-2.5 px-3 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
-                    authType === 'login' ? 'bg-amber-500 text-slate-950' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  <LogIn className="w-4 h-4" /> Already registered
-                </button>
+            <>
+              <div className="grid grid-cols-2 p-1 rounded-xl bg-slate-950 border border-slate-800 mb-4 mt-5">
+                <button type="button" onClick={() => setAuthType('signup')} className={`py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-1.5 ${authType === 'signup' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}><UserPlus className="w-4 h-4" /> New account</button>
+                <button type="button" onClick={() => setAuthType('login')} className={`py-2.5 rounded-lg text-sm font-bold ${authType === 'login' ? 'bg-amber-500 text-slate-950' : 'text-slate-400'}`}>Sign in</button>
               </div>
-
-              {authError && (
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex gap-2">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <span>{authError}</span>
-                </div>
-              )}
-
-              {authMessage && (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-sm">
-                  {authMessage}
-                </div>
-              )}
-
-              <form onSubmit={handleSendCode} className="space-y-3.5">
-                {authType === 'signup' && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Your name or agency name</label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                      <input
-                        type="text"
-                        value={fullName}
-                        onChange={(e) => setFullName(e.target.value)}
-                        placeholder="e.g. Chaudhry Real Estate"
-                        className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-500"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Your email address</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="yourname@gmail.com"
-                      required
-                      className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm focus:outline-none focus:border-amber-500"
-                    />
-                  </div>
-                </div>
-
-                {authType === 'signup' && (
-                  <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">Your mobile number</label>
-                    <p className="text-[11px] text-slate-500 mb-1.5">Buyers will call this number (+92 added automatically)</p>
-                    <div className="flex gap-2">
-                      <span className="h-11 px-3 rounded-xl bg-slate-800 border border-slate-700 text-amber-400 font-mono text-sm flex items-center gap-1 shrink-0">
-                        +92
-                      </span>
-                      <div className="relative flex-1">
-                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                        <input
-                          type="tel"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value.replace(/[^\d\s-]/g, ''))}
-                          placeholder="300 1234567"
-                          className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm font-mono focus:outline-none focus:border-amber-500"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full h-12 mt-1 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-500 hover:from-amber-400 hover:to-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  {isLoading ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" /> Sending link...</>
-                  ) : (
-                    <><span>{authType === 'signup' ? 'Create account & send link' : 'Email me a sign-in link'}</span><ArrowRight className="w-4 h-4" /></>
-                  )}
-                </button>
-
-                <p className="text-center text-[11px] text-slate-500">
-                  No password needed — we email you a sign-in link each time.
-                </p>
+              <button type="button" onClick={handleGoogle} disabled={isLoading} className="w-full h-11 rounded-xl bg-white text-slate-900 font-bold text-sm flex items-center justify-center gap-2 hover:bg-slate-100 disabled:opacity-50"><Chrome className="w-4 h-4" /> Continue with Google</button>
+              <div className="flex items-center gap-3 my-4 text-[11px] text-slate-500"><span className="h-px bg-slate-800 flex-1" />OR<span className="h-px bg-slate-800 flex-1" /></div>
+              <form onSubmit={handleCredentials} className="space-y-3.5">
+                {authType === 'signup' && <div className="relative"><User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Name or agency name" className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm" /></div>}
+                <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm" /></div>
+                {authType === 'signup' && <div className="relative"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="tel" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^\d\s-]/g, ''))} placeholder="Mobile number (+92)" className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm" /></div>}
+                <div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password (8+ characters)" className="w-full h-11 pl-9 pr-4 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm" /></div>
+                <button type="submit" disabled={isLoading} className="w-full h-12 rounded-xl bg-gradient-to-r from-amber-500 to-emerald-500 text-slate-950 font-bold flex items-center justify-center gap-2 disabled:opacity-50">{isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <>{authType === 'signup' ? 'Create account' : 'Sign in'}<ArrowRight className="w-4 h-4" /></>}</button>
               </form>
-            </div>
+              <p className="text-center text-[11px] text-slate-500 mt-4">New accounts must verify their email with a one-time 6-digit code.</p>
+            </>
           )}
-
-          <div className="mt-5 pt-3 border-t border-slate-800/80 text-center text-xs text-slate-500">
-            <p className="flex items-center justify-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              Your details are kept private and secure
-            </p>
-          </div>
+          <div className="mt-5 pt-3 border-t border-slate-800 text-center text-xs text-slate-500"><ShieldCheck className="w-3.5 h-3.5 inline text-emerald-400 mr-1" /> Your details are kept private and secure</div>
         </div>
       </div>
     </div>

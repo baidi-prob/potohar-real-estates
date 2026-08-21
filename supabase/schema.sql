@@ -7,6 +7,7 @@
 --   2. 0002_rls_policies.sql
 --   3. 0003_storage.sql
 --   4. 0004_seed_data.sql
+--   5. 0005_email_otp_verification.sql
 --
 -- How to run:  Supabase Dashboard → SQL → New query → paste → Run
 -- =====================================================================
@@ -20,9 +21,14 @@ create table if not exists public.profiles (
   phone      text,
   email      text,
   avatar_url text,
+  is_verified boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Upgrade existing projects created before email OTP verification was added.
+alter table public.profiles
+  add column if not exists is_verified boolean not null default false;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -48,6 +54,28 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ---------------------------------------------------------------------
+-- EMAIL VERIFICATION CODES
+-- Raw OTP values are never stored. Service-role API routes write/read this table.
+-- ---------------------------------------------------------------------
+create table if not exists public.email_verification_codes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users (id) on delete cascade not null,
+  code_hash text not null,
+  expires_at timestamptz not null,
+  attempts integer not null default 0,
+  last_sent_at timestamptz not null default now(),
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_email_verification_codes_user_created
+  on public.email_verification_codes (user_id, created_at desc);
+
+alter table public.email_verification_codes enable row level security;
+
+-- No client policy is intentional. OTPs are managed only by server API routes.
 
 -- ---------------------------------------------------------------------
 -- LISTINGS
@@ -118,6 +146,13 @@ alter table public.profiles  enable row level security;
 alter table public.listings  enable row level security;
 alter table public.favorites enable row level security;
 
+-- The browser may edit profile details, but only the server OTP route may
+-- change is_verified. The service role used by that route is not affected.
+revoke insert (is_verified) on public.profiles from anon, authenticated;
+revoke update (is_verified) on public.profiles from anon, authenticated;
+grant insert (id, full_name, phone, email, avatar_url) on public.profiles to authenticated;
+grant update (full_name, phone, email, avatar_url, updated_at) on public.profiles to authenticated;
+
 drop policy if exists "profiles_select" on public.profiles;
 create policy "profiles_select" on public.profiles
   for select using (true);
@@ -136,15 +171,24 @@ create policy "listings_select" on public.listings
 
 drop policy if exists "listings_insert" on public.listings;
 create policy "listings_insert" on public.listings
-  for insert with check (auth.uid() = user_id);
+  for insert with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 drop policy if exists "listings_update" on public.listings;
 create policy "listings_update" on public.listings
-  for update using (auth.uid() = user_id);
+  for update using (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 drop policy if exists "listings_delete" on public.listings;
 create policy "listings_delete" on public.listings
-  for delete using (auth.uid() = user_id);
+  for delete using (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 drop policy if exists "favorites_select" on public.favorites;
 create policy "favorites_select" on public.favorites
@@ -152,11 +196,17 @@ create policy "favorites_select" on public.favorites
 
 drop policy if exists "favorites_insert" on public.favorites;
 create policy "favorites_insert" on public.favorites
-  for insert with check (auth.uid() = user_id);
+  for insert with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 drop policy if exists "favorites_delete" on public.favorites;
 create policy "favorites_delete" on public.favorites
-  for delete using (auth.uid() = user_id);
+  for delete using (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 -- ---------------------------------------------------------------------
 -- STORAGE

@@ -16,6 +16,7 @@ create table if not exists public.profiles (
   phone      text,
   email      text,
   avatar_url text,
+  is_verified boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -45,6 +46,26 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ---------------------------------------------------------------------
+-- EMAIL VERIFICATION CODES
+-- Raw OTP values are never stored. Server routes use the service role key.
+-- ---------------------------------------------------------------------
+create table if not exists public.email_verification_codes (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users (id) on delete cascade not null,
+  code_hash text not null,
+  expires_at timestamptz not null,
+  attempts integer not null default 0,
+  last_sent_at timestamptz not null default now(),
+  consumed_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_email_verification_codes_user_created
+  on public.email_verification_codes (user_id, created_at desc);
+
+alter table public.email_verification_codes enable row level security;
 
 -- ---------------------------------------------------------------------
 -- LISTINGS (property ads)

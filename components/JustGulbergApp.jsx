@@ -265,9 +265,10 @@ export default function JustGulbergApp() {
       if (session?.user) {
         const uid = session.user.id;
         setAuthUserId(uid);
-        setIsLoggedIn(true);
         getProfile(uid).then((profile) => {
           if (cancelled) return;
+          const verified = Boolean(profile?.is_verified);
+          setIsLoggedIn(verified);
           setCurrentUser({
             id: uid,
             email: session.user.email,
@@ -286,10 +287,11 @@ export default function JustGulbergApp() {
       if (session?.user) {
         const uid = session.user.id;
         setAuthUserId(uid);
-        setIsLoggedIn(true);
-        setShowAuthModal(false);
         getProfile(uid).then((profile) => {
           if (cancelled) return;
+          const verified = Boolean(profile?.is_verified);
+          setIsLoggedIn(verified);
+          if (verified) setShowAuthModal(false);
           setCurrentUser({
             id: uid,
             email: session.user.email,

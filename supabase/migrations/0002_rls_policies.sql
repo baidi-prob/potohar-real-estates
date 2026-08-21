@@ -38,15 +38,24 @@ create policy "listings_select" on public.listings
 
 drop policy if exists "listings_insert" on public.listings;
 create policy "listings_insert" on public.listings
-  for insert with check (auth.uid() = user_id);
+  for insert with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 drop policy if exists "listings_update" on public.listings;
 create policy "listings_update" on public.listings
-  for update using (auth.uid() = user_id);
+  for update using (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 drop policy if exists "listings_delete" on public.listings;
 create policy "listings_delete" on public.listings
-  for delete using (auth.uid() = user_id);
+  for delete using (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 -- ---------------------------------------------------------------------
 -- FAVORITES
@@ -58,8 +67,14 @@ create policy "favorites_select" on public.favorites
 
 drop policy if exists "favorites_insert" on public.favorites;
 create policy "favorites_insert" on public.favorites
-  for insert with check (auth.uid() = user_id);
+  for insert with check (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );
 
 drop policy if exists "favorites_delete" on public.favorites;
 create policy "favorites_delete" on public.favorites
-  for delete using (auth.uid() = user_id);
+  for delete using (
+    auth.uid() = user_id
+    and exists (select 1 from public.profiles where id = auth.uid() and is_verified = true)
+  );

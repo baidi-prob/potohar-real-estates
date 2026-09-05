@@ -170,7 +170,7 @@ export default function AuthPage({
     setIsLoading(true);
     const { error } = await getSupabase().auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/api/auth/google/callback` },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
     if (error) {
       setAuthError(error.message);

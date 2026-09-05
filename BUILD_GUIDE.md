@@ -27,7 +27,6 @@ Route (app)                              Size     First Load JS
 ├ ƒ /api/auth/otp/request                0 B                0 B
 ├ ƒ /api/auth/otp/verify                 0 B                0 B
 ├ ○ /auth/callback                       2.51 kB         154 kB
-├ ○ /icon.svg                            0 B                0 B
 ├ ● /listings/[id]                       175 B          96.2 kB
 ├ ○ /robots.txt                          0 B                0 B
 └ ƒ /sitemap.xml                         0 B                0 B

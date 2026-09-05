@@ -27,6 +27,9 @@ export const metadata = {
     title: 'Potohar Real Estates | Gulberg Islamabad Properties',
     description: 'Buy and sell plots, built houses, and luxury farmhouses in Gulberg Greens & Gulberg Residencia, Islamabad.',
   },
+  icons: {
+    icon: '/icon.svg',
+  },
   metadataBase: new URL(getSiteUrl()),
 };
 

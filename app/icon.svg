@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FCD34D" />
+      <stop offset="50%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#D97706" />
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34D399" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="#090D16" />
+  <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" stroke="#F59E0B" stroke-opacity="0.3" />
+  <!-- Architectural roofline / Potohar monogram -->
+  <path d="M16 6L6 14.5H10V25H22V14.5H26L16 6Z" fill="url(#goldGrad)" />
+  <path d="M13 18H19V25H13V18Z" fill="#090D16" />
+  <!-- Brand emerald badge accent -->
+  <circle cx="21.5" cy="10.5" r="2.5" fill="url(#emeraldGrad)" />
+</svg>

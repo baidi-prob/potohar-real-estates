@@ -6,32 +6,35 @@
 - [x] No TypeScript/ESLint errors
 - [x] All dependencies installed
 - [x] Environment variables configured
-- [x] Database schema prepared (optional)
-- [ ] Update meta tags in `app/layout.jsx`
-- [ ] Update sitemap.xml with correct URLs
-- [ ] Update robots.txt for production
-- [ ] Add favicon to `public/`
+- [x] Database schema prepared (Supabase SQL migrations 0001–0005)
+- [x] Meta tags and OpenGraph in `app/layout.jsx`
+- [x] Dynamic sitemap in `app/sitemap.js`
+- [x] Search engine indexing in `app/robots.js`
+- [x] Custom brand favicon in `app/icon.svg`
 
 ## Vercel Deployment
 
-### Step 1: Prepare Repository
+### Step 1: Repository Status
+Repository is connected to GitHub:
 ```bash
-git init
-git add .
-git commit -m "Initial commit: Just Gulberg marketplace"
-git branch -M main
-git remote add origin https://github.com/yourusername/just-gulberg.git
-git push -u origin main
+git remote -v
+# origin  https://github.com/baidi-prob/potohar-real-estates.git
 ```
 
-### Step 2: Create Vercel Account
-- [ ] Sign up at https://vercel.com
+### Step 2: Connect to Vercel
+- [ ] Sign up/in at https://vercel.com
 - [ ] Connect GitHub account
-- [ ] Import repository
+- [ ] Import repository `baidi-prob/potohar-real-estates`
 
 ### Step 3: Configure Environment
-- [ ] Add `NEXT_PUBLIC_SUPABASE_URL`
-- [ ] Add `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+Add the following in Vercel **Project Settings → Environment Variables**:
+- [ ] `NEXT_PUBLIC_SUPABASE_URL`
+- [ ] `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- [ ] `NEXT_PUBLIC_SITE_URL` (e.g. `https://potohar-real-estates.vercel.app`)
+- [ ] `SUPABASE_SERVICE_ROLE_KEY` (server-only)
+- [ ] `OTP_HASH_SECRET` (server-only)
+- [ ] `RESEND_API_KEY` (server-only)
+- [ ] `RESEND_FROM_EMAIL` (server-only, e.g. `Potohar Real Estates <noreply@yourdomain.com>`)
 
 ### Step 4: Deploy
 - [ ] Click "Deploy"

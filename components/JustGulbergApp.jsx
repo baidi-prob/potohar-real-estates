@@ -214,11 +214,12 @@ export default function JustGulbergApp() {
     return () => clearTimeout(t);
   }, [supabaseLive, authUserId, activeTab, sectorFilter, blockFilter, sizeFilter, typeFilter, featureFilter, maxPrice, searchQuery, sortOrder]);
 
-  // On-screen auth debug badge (temporary; helps diagnose session drops)
+  // On-screen auth debug badge (development only; helps diagnose session drops)
   const [authDebug, setAuthDebug] = useState(null);
   const lastSessionRef = useRef(null);
 
   const reportAuth = (event, session) => {
+    if (process.env.NODE_ENV !== 'development') return;
     const remaining = session?.expires_at ? Math.round(session.expires_at - Date.now() / 1000) : null;
     const prev = lastSessionRef.current;
     let msg =
@@ -239,8 +240,9 @@ export default function JustGulbergApp() {
     setAuthDebug({ msg, kind: event === 'SIGNED_OUT' ? 'err' : 'ok' });
   };
 
-  // Show what happened before a possible page reload
+  // Show what happened before a possible page reload (dev only)
   useEffect(() => {
+    if (process.env.NODE_ENV !== 'development') return;
     let prev = null;
     try {
       prev = JSON.parse(localStorage.getItem('auth-last-event') || 'null');
@@ -282,7 +284,9 @@ export default function JustGulbergApp() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (cancelled) return;
-      console.log('[AUTH-DEBUG] event:', event, 'session:', !!session, session ? `expires_at=${session.expires_at} now=${Date.now() / 1000} user=${session.user.email}` : '');
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[AUTH-DEBUG] event:', event, 'session:', !!session, session ? `expires_at=${session.expires_at} now=${Date.now() / 1000} user=${session.user.email}` : '');
+      }
       reportAuth(event, session);
       if (session?.user) {
         const uid = session.user.id;
@@ -305,7 +309,9 @@ export default function JustGulbergApp() {
           email: session.user.email,
         }).catch(() => {});
       } else if (event === 'SIGNED_OUT') {
-        console.log('[AUTH-DEBUG] SIGNED_OUT fired with no session');
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[AUTH-DEBUG] SIGNED_OUT fired with no session');
+        }
         setAuthUserId(null);
         setIsLoggedIn(false);
         setCurrentUser(null);
@@ -1824,8 +1830,8 @@ export default function JustGulbergApp() {
         reason={authModalReason}
       />
 
-      {/* TEMPORARY AUTH DEBUG BADGE */}
-      {authDebug && (
+      {/* AUTH DEBUG BADGE (development only) */}
+      {process.env.NODE_ENV === 'development' && authDebug && (
         <div className={`fixed bottom-2 left-2 z-[60] max-w-[95vw] text-[10px] font-mono px-2 py-1.5 rounded-lg border ${
           authDebug.kind === 'err'
             ? 'bg-red-950/90 border-red-500/60 text-red-300'
